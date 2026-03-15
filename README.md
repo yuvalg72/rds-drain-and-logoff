@@ -1,10 +1,3 @@
-להלן **README מקצועי ועדכני (2026)** שמתאים לריפו בשם
-`rds-drain-and-logoff`
-
-ניתן להעתיק ישירות ל-`README.md`.
-
----
-
 # RDS Drain and Logoff
 
 PowerShell utility for placing all **Remote Desktop Services (RDS) Session Hosts** into **drain mode** and forcing logoff of active user sessions across all collections through the **RD Connection Broker**.
