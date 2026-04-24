@@ -121,10 +121,32 @@ Invoke-RDUserLogoff
 
 # Usage
 
+## GUI (recommended)
+
+Launch the graphical interface from an elevated PowerShell prompt:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File rds-drain-and-logoff-gui.ps1
+```
+
+The GUI provides:
+
+* **Auto-detected Connection Broker** — editable field so you can point it at any broker
+* **Session Hosts list** — shows each host and its current drain status (colour-coded: green = accepting, red = drained)
+* **Active Sessions list** — shows user, host, session ID, and state
+* **Refresh** — reloads both lists from the broker on demand
+* **Drain All Hosts** — sets every host to `NotUntilReboot` with a confirmation dialog
+* **Logoff All Sessions** — force-logs off every active session with a confirmation dialog
+* **Drain + Logoff All** — performs both operations in sequence with a single confirmation
+* **Live Status Log** — timestamped colour-coded log of every action taken
+* **LinkedIn link** — opens the author's profile in your browser
+
+## Command line
+
 Run the script from a server that can communicate with the **RD Connection Broker**.
 
-```
-powershell.exe -ExecutionPolicy Bypass -File rds-drain-and-logoff.ps1
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File drain-rds-farm.ps1
 ```
 
 ---
@@ -165,21 +187,86 @@ Recommended precautions:
 
 ---
 
-# Optional: Build EXE
+# Building & Signing the EXE
 
-The script can be packaged as an executable using **PS2EXE**.
+The script can be packaged as a signed executable using **PS2EXE** and
+**Authenticode** (Windows built-in code signing).  A valid Authenticode
+signature is required by Microsoft Defender and most EDR solutions before they
+will allow an unsigned, locally-built binary to run.
 
-Install the module:
+Use the included `build-and-sign.ps1` helper script.  Run it from an elevated
+(Administrator) PowerShell prompt.
+
+---
+
+## Option 1 – Self-signed certificate (default)
+
+No certificate infrastructure needed.  Just run the script with no arguments:
+
+```powershell
+.\build-and-sign.ps1
+```
+
+This creates a self-signed code-signing certificate, trusts it locally, builds
+the EXE, and signs it in one step.  Defender will accept the EXE **on the
+machine where you ran the script**.
+
+To allow the EXE to run on other machines, distribute the certificate via Group
+Policy:
 
 ```
-Install-Module ps2exe
+Computer Configuration → Windows Settings → Security Settings →
+Public Key Policies → Trusted Publishers   (add the .cer export)
+                     → Trusted Root CAs    (add the .cer export)
 ```
 
-Build executable:
+Export the certificate for distribution:
 
+```powershell
+$cert = Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.Subject -match "RDS Drain" }
+Export-Certificate -Cert $cert -FilePath rds-drain-logoff-signing.cer -Type CERT
 ```
-Invoke-PS2EXE rds-drain-and-logoff.ps1 rds-drain-and-logoff.exe -RequireAdmin
+
+---
+
+## Option 2 – Internal Active Directory Certificate Services (ADCS)
+
+If your domain has an ADCS CA with a CodeSigning template, the script will
+automatically request and retrieve a certificate:
+
+```powershell
+.\build-and-sign.ps1 -CertSource InternalCA -CATemplate "CodeSigning"
 ```
+
+The resulting certificate is trusted by every machine that trusts your domain
+CA — no extra trust distribution is needed.
+
+---
+
+## Option 3 – Existing certificate
+
+If your organisation already issued you a code-signing certificate, pass its
+thumbprint:
+
+```powershell
+.\build-and-sign.ps1 -CertSource Thumbprint -Thumbprint "AABBCCDDEEFF..."
+```
+
+To find the thumbprint of certificates already in your store:
+
+```powershell
+Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.EnhancedKeyUsageList -match "Code Signing" }
+```
+
+---
+
+## Verifying the signature
+
+```powershell
+Get-AuthenticodeSignature .\rds-drain-and-logoff.exe | Format-List
+```
+
+A correctly signed binary shows `Status: Valid`.
 
 ---
 
@@ -202,8 +289,11 @@ Future versions may include:
 
 ```
 Version: 1.0
-Year: 2026
-Author: Yuval Grimblat
+Year:     2026
+Author:   Yuval Grimblat
+Title:    Network Security Solutions Architect and Project Manager
+Company:  Mornex LTD
+LinkedIn: https://www.linkedin.com/in/yuvalgrimblat
 ```
 
 ---
