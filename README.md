@@ -177,19 +177,32 @@ Use the included `build-and-sign.ps1` helper script.  Run it from an elevated
 
 ---
 
-## Option 1 – Existing certificate (recommended for production)
+## Option 1 – Self-signed certificate (default)
 
-If your organisation already issued you a code-signing certificate, pass its
-thumbprint:
+No certificate infrastructure needed.  Just run the script with no arguments:
 
 ```powershell
-.\build-and-sign.ps1 -CertSource Thumbprint -Thumbprint "AABBCCDDEEFF..."
+.\build-and-sign.ps1
 ```
 
-To find the thumbprint of certificates already in your store:
+This creates a self-signed code-signing certificate, trusts it locally, builds
+the EXE, and signs it in one step.  Defender will accept the EXE **on the
+machine where you ran the script**.
+
+To allow the EXE to run on other machines, distribute the certificate via Group
+Policy:
+
+```
+Computer Configuration → Windows Settings → Security Settings →
+Public Key Policies → Trusted Publishers   (add the .cer export)
+                     → Trusted Root CAs    (add the .cer export)
+```
+
+Export the certificate for distribution:
 
 ```powershell
-Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.EnhancedKeyUsageList -match "Code Signing" }
+$cert = Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.Subject -match "RDS Drain" }
+Export-Certificate -Cert $cert -FilePath rds-drain-logoff-signing.cer -Type CERT
 ```
 
 ---
@@ -208,27 +221,19 @@ CA — no extra trust distribution is needed.
 
 ---
 
-## Option 3 – Self-signed certificate (testing / lab only)
+## Option 3 – Existing certificate
+
+If your organisation already issued you a code-signing certificate, pass its
+thumbprint:
 
 ```powershell
-.\build-and-sign.ps1 -CertSource SelfSigned
+.\build-and-sign.ps1 -CertSource Thumbprint -Thumbprint "AABBCCDDEEFF..."
 ```
 
-This creates a certificate, trusts it locally, builds the EXE, and signs it.
-Defender will accept the EXE **on the machine where you ran the script**.  For
-other machines you must distribute the certificate via Group Policy:
-
-```
-Computer Configuration → Windows Settings → Security Settings →
-Public Key Policies → Trusted Publishers   (add the .cer export)
-                     → Trusted Root CAs    (add the .cer export)
-```
-
-Export the certificate for distribution:
+To find the thumbprint of certificates already in your store:
 
 ```powershell
-$cert = Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.Subject -match "RDS Drain" }
-Export-Certificate -Cert $cert -FilePath rds-drain-logoff-signing.cer -Type CERT
+Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.EnhancedKeyUsageList -match "Code Signing" }
 ```
 
 ---
