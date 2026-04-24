@@ -165,21 +165,81 @@ Recommended precautions:
 
 ---
 
-# Optional: Build EXE
+# Building & Signing the EXE
 
-The script can be packaged as an executable using **PS2EXE**.
+The script can be packaged as a signed executable using **PS2EXE** and
+**Authenticode** (Windows built-in code signing).  A valid Authenticode
+signature is required by Microsoft Defender and most EDR solutions before they
+will allow an unsigned, locally-built binary to run.
 
-Install the module:
+Use the included `build-and-sign.ps1` helper script.  Run it from an elevated
+(Administrator) PowerShell prompt.
+
+---
+
+## Option 1 – Existing certificate (recommended for production)
+
+If your organisation already issued you a code-signing certificate, pass its
+thumbprint:
+
+```powershell
+.\build-and-sign.ps1 -CertSource Thumbprint -Thumbprint "AABBCCDDEEFF..."
+```
+
+To find the thumbprint of certificates already in your store:
+
+```powershell
+Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.EnhancedKeyUsageList -match "Code Signing" }
+```
+
+---
+
+## Option 2 – Internal Active Directory Certificate Services (ADCS)
+
+If your domain has an ADCS CA with a CodeSigning template, the script will
+automatically request and retrieve a certificate:
+
+```powershell
+.\build-and-sign.ps1 -CertSource InternalCA -CATemplate "CodeSigning"
+```
+
+The resulting certificate is trusted by every machine that trusts your domain
+CA — no extra trust distribution is needed.
+
+---
+
+## Option 3 – Self-signed certificate (testing / lab only)
+
+```powershell
+.\build-and-sign.ps1 -CertSource SelfSigned
+```
+
+This creates a certificate, trusts it locally, builds the EXE, and signs it.
+Defender will accept the EXE **on the machine where you ran the script**.  For
+other machines you must distribute the certificate via Group Policy:
 
 ```
-Install-Module ps2exe
+Computer Configuration → Windows Settings → Security Settings →
+Public Key Policies → Trusted Publishers   (add the .cer export)
+                     → Trusted Root CAs    (add the .cer export)
 ```
 
-Build executable:
+Export the certificate for distribution:
 
+```powershell
+$cert = Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.Subject -match "RDS Drain" }
+Export-Certificate -Cert $cert -FilePath rds-drain-logoff-signing.cer -Type CERT
 ```
-Invoke-PS2EXE rds-drain-and-logoff.ps1 rds-drain-and-logoff.exe -RequireAdmin
+
+---
+
+## Verifying the signature
+
+```powershell
+Get-AuthenticodeSignature .\rds-drain-and-logoff.exe | Format-List
 ```
+
+A correctly signed binary shows `Status: Valid`.
 
 ---
 
