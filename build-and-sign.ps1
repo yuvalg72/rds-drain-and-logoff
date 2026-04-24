@@ -44,7 +44,7 @@
 
 param(
     [ValidateSet("Thumbprint", "InternalCA", "SelfSigned")]
-    [string] $CertSource    = "Thumbprint",
+    [string] $CertSource    = "SelfSigned",
 
     [string] $Thumbprint    = "",
     [string] $CATemplate    = "CodeSigning",
