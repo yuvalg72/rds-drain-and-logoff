@@ -267,8 +267,11 @@ Future versions may include:
 
 ```
 Version: 1.0
-Year: 2026
-Author: Yuval Grimblat
+Year:     2026
+Author:   Yuval Grimblat
+Title:    Network Security Solutions Architect and Project Manager
+Company:  Mornex LTD
+LinkedIn: https://www.linkedin.com/in/yuvalgrimblat
 ```
 
 ---

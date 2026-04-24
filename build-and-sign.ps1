@@ -1,5 +1,11 @@
 #Requires -RunAsAdministrator
 <#
+    Author:   Yuval Grimblat
+    Title:    Network Security Solutions Architect and Project Manager
+    Company:  Mornex LTD
+    Year:     2026
+    LinkedIn: https://www.linkedin.com/in/yuvalgrimblat
+
 .SYNOPSIS
     Builds rds-drain-and-logoff.exe from the PowerShell source and signs it with Authenticode.
 
