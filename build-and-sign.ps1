@@ -5,13 +5,13 @@
 
 .DESCRIPTION
     Supports three certificate sources:
-      1. Thumbprint  – use an existing certificate already in your cert store
+      1. SelfSigned  – create a self-signed certificate (default; must be trusted via
+                       Group Policy or manually on each target machine)
       2. InternalCA  – request a certificate from your enterprise (ADCS) CA
-      3. SelfSigned  – create a self-signed certificate (useful for testing;
-                       must be trusted via Group Policy or manually on each machine)
+      3. Thumbprint  – use an existing certificate already in your cert store
 
 .PARAMETER CertSource
-    "Thumbprint" | "InternalCA" | "SelfSigned"   (default: Thumbprint)
+    "SelfSigned" | "InternalCA" | "Thumbprint"   (default: SelfSigned)
 
 .PARAMETER Thumbprint
     Thumbprint of an existing code-signing cert in Cert:\CurrentUser\My or
@@ -30,112 +30,103 @@
     Default: DigiCert public TSA (works without a paid certificate).
 
 .EXAMPLE
-    # Re-use an existing cert already in your store
-    .\build-and-sign.ps1 -CertSource Thumbprint -Thumbprint "AABBCC..."
+    # Quick self-signed build (default, testing / internal lab)
+    .\build-and-sign.ps1
 
 .EXAMPLE
     # Issue a cert from your internal Active Directory Certificate Services
     .\build-and-sign.ps1 -CertSource InternalCA -CATemplate "CodeSigning"
 
 .EXAMPLE
-    # Quick self-signed build (testing / internal lab only)
-    .\build-and-sign.ps1 -CertSource SelfSigned
+    # Re-use an existing cert already in your store
+    .\build-and-sign.ps1 -CertSource Thumbprint -Thumbprint "AABBCC..."
 #>
 
 param(
-    [ValidateSet("Thumbprint", "InternalCA", "SelfSigned")]
-    [string] $CertSource    = "SelfSigned",
+    [ValidateSet("SelfSigned", "InternalCA", "Thumbprint")]
+    [string] $CertSource      = "SelfSigned",
 
-    [string] $Thumbprint    = "",
-    [string] $CATemplate    = "CodeSigning",
-    [string] $CertSubject   = "RDS Drain and Logoff Tool",
+    [string] $Thumbprint      = "",
+    [string] $CATemplate      = "CodeSigning",
+    [string] $CertSubject     = "RDS Drain and Logoff Tool",
     [string] $TimestampServer = "http://timestamp.digicert.com"
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$ScriptDir  = $PSScriptRoot
-$SourcePs1  = Join-Path $ScriptDir "drain-rds-farm.ps1"
-$OutputExe  = Join-Path $ScriptDir "rds-drain-and-logoff.exe"
+# $PSScriptRoot is empty when the script is dot-sourced; fall back to the current directory.
+$ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { $PWD.Path }
+$SourcePs1 = Join-Path $ScriptDir "drain-rds-farm.ps1"
+$OutputExe = Join-Path $ScriptDir "rds-drain-and-logoff.exe"
 
 # ── 1. Resolve the signing certificate ────────────────────────────────────────
 
-function Get-SigningCert {
-    switch ($CertSource) {
+function Get-SigningCert([string]$Source, [string]$Print, [string]$Template, [string]$Subject) {
+    switch ($Source) {
 
         "Thumbprint" {
-            if (-not $Thumbprint) {
+            if (-not $Print) {
                 throw "Provide -Thumbprint when using CertSource=Thumbprint."
             }
             $cert = (Get-ChildItem Cert:\CurrentUser\My, Cert:\LocalMachine\My -ErrorAction SilentlyContinue) |
-                    Where-Object { $_.Thumbprint -eq $Thumbprint } |
+                    Where-Object { $_.Thumbprint -eq $Print } |
                     Select-Object -First 1
             if (-not $cert) {
-                throw "Certificate with thumbprint '$Thumbprint' not found in any local store."
+                throw "Certificate with thumbprint '$Print' not found in any local store."
             }
             return $cert
         }
 
         "InternalCA" {
-            Write-Host "Requesting certificate from internal CA (template: $CATemplate)..."
-            # Get-Certificate submits a CSR to ADCS and retrieves the signed cert automatically.
+            Write-Host "Requesting certificate from internal CA (template: $Template)..."
             $request = Get-Certificate `
-                -Template        $CATemplate `
-                -SubjectName     "CN=$CertSubject" `
+                -Template          $Template `
+                -SubjectName       "CN=$Subject" `
                 -CertStoreLocation Cert:\CurrentUser\My
             return $request.Certificate
         }
 
         "SelfSigned" {
-            Write-Warning "Self-signed certificate created. You must add it to 'Trusted Publishers' and 'Trusted Root CA' stores on every machine that will run the EXE."
+            Write-Warning "Self-signed certificate created. Add it to 'Trusted Publishers' and 'Trusted Root CA' stores on every machine that will run the EXE."
             $cert = New-SelfSignedCertificate `
-                -Type            CodeSigningCert `
-                -Subject         "CN=$CertSubject" `
-                -HashAlgorithm   SHA256 `
-                -KeyExportPolicy Exportable `
+                -Type              CodeSigningCert `
+                -Subject           "CN=$Subject" `
+                -HashAlgorithm     SHA256 `
+                -KeyExportPolicy   Exportable `
                 -CertStoreLocation Cert:\CurrentUser\My `
-                -NotAfter        (Get-Date).AddYears(3)
+                -NotAfter          (Get-Date).AddYears(3)
 
-            # Trust the cert locally so Defender accepts it on this machine immediately.
-            $rootStore = [System.Security.Cryptography.X509Certificates.X509Store]::new(
-                "Root", "LocalMachine")
-            $rootStore.Open("ReadWrite")
-            $rootStore.Add($cert)
-            $rootStore.Close()
-
-            $pubStore = [System.Security.Cryptography.X509Certificates.X509Store]::new(
-                "TrustedPublisher", "LocalMachine")
-            $pubStore.Open("ReadWrite")
-            $pubStore.Add($cert)
-            $pubStore.Close()
+            # Trust locally so Defender accepts the signed binary on this machine immediately.
+            foreach ($storeName in @("Root", "TrustedPublisher")) {
+                $store = [System.Security.Cryptography.X509Certificates.X509Store]::new(
+                    $storeName, "LocalMachine")
+                try {
+                    $store.Open("ReadWrite")
+                    $store.Add($cert)
+                } finally {
+                    $store.Close()
+                }
+            }
 
             Write-Host "Self-signed cert added to local Trusted Root CA and Trusted Publishers stores."
             return $cert
         }
+
+        default {
+            throw "Unknown CertSource '$Source'."
+        }
     }
 }
 
-$cert = Get-SigningCert
+$cert = Get-SigningCert -Source $CertSource -Print $Thumbprint -Template $CATemplate -Subject $CertSubject
 Write-Host "Using certificate: Subject=$($cert.Subject)  Thumbprint=$($cert.Thumbprint)"
 
-# ── 2. Sign the PowerShell source script ──────────────────────────────────────
+# ── 2. Build the EXE with PS2EXE ──────────────────────────────────────────────
+# Build BEFORE signing the source script so PS2EXE does not embed the
+# Authenticode signature block as script text inside the EXE.
 
-Write-Host "Signing $SourcePs1 ..."
-$sigResult = Set-AuthenticodeSignature `
-    -FilePath        $SourcePs1 `
-    -Certificate     $cert `
-    -TimestampServer $TimestampServer `
-    -HashAlgorithm   SHA256
-
-if ($sigResult.Status -ne "Valid") {
-    throw "Script signing failed: $($sigResult.StatusMessage)"
-}
-Write-Host "Script signed successfully."
-
-# ── 3. Build the EXE with PS2EXE ──────────────────────────────────────────────
-
-if (-not (Get-Module -ListAvailable ps2exe)) {
+if (-not (Get-Module -ListAvailable -Name ps2exe)) {
     Write-Host "Installing ps2exe module ..."
     Install-Module ps2exe -Scope CurrentUser -Force
 }
@@ -145,25 +136,27 @@ Write-Host "Building $OutputExe ..."
 Invoke-PS2EXE `
     -InputFile  $SourcePs1 `
     -OutputFile $OutputExe `
-    -RequireAdmin `
-    -NoConsole:$false
+    -RequireAdmin
 
 if (-not (Test-Path $OutputExe)) {
     throw "ps2exe did not produce $OutputExe"
 }
 Write-Host "EXE built."
 
-# ── 4. Sign the EXE with Authenticode ─────────────────────────────────────────
+# ── 3. Sign the PowerShell source script and the EXE ──────────────────────────
 
-Write-Host "Signing $OutputExe ..."
-$sigResult = Set-AuthenticodeSignature `
-    -FilePath        $OutputExe `
-    -Certificate     $cert `
-    -TimestampServer $TimestampServer `
-    -HashAlgorithm   SHA256
+foreach ($target in @($SourcePs1, $OutputExe)) {
+    Write-Host "Signing $target ..."
+    $sigResult = Set-AuthenticodeSignature `
+        -FilePath        $target `
+        -Certificate     $cert `
+        -TimestampServer $TimestampServer `
+        -HashAlgorithm   SHA256
 
-if ($sigResult.Status -ne "Valid") {
-    throw "EXE signing failed: $($sigResult.StatusMessage)"
+    if ($sigResult.Status -ne "Valid") {
+        throw "Signing failed for $target`: $($sigResult.StatusMessage)"
+    }
+    Write-Host "Signed: $target"
 }
 
 Write-Host ""
