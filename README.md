@@ -121,10 +121,32 @@ Invoke-RDUserLogoff
 
 # Usage
 
+## GUI (recommended)
+
+Launch the graphical interface from an elevated PowerShell prompt:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File rds-drain-and-logoff-gui.ps1
+```
+
+The GUI provides:
+
+* **Auto-detected Connection Broker** — editable field so you can point it at any broker
+* **Session Hosts list** — shows each host and its current drain status (colour-coded: green = accepting, red = drained)
+* **Active Sessions list** — shows user, host, session ID, and state
+* **Refresh** — reloads both lists from the broker on demand
+* **Drain All Hosts** — sets every host to `NotUntilReboot` with a confirmation dialog
+* **Logoff All Sessions** — force-logs off every active session with a confirmation dialog
+* **Drain + Logoff All** — performs both operations in sequence with a single confirmation
+* **Live Status Log** — timestamped colour-coded log of every action taken
+* **LinkedIn link** — opens the author's profile in your browser
+
+## Command line
+
 Run the script from a server that can communicate with the **RD Connection Broker**.
 
-```
-powershell.exe -ExecutionPolicy Bypass -File rds-drain-and-logoff.ps1
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File drain-rds-farm.ps1
 ```
 
 ---
