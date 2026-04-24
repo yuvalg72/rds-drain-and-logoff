@@ -1,4 +1,11 @@
 #Requires -RunAsAdministrator
+<#
+    Author:   Yuval Grimblat
+    Title:    Network Security Solutions Architect and Project Manager
+    Company:  Mornex LTD
+    Year:     2026
+    LinkedIn: https://www.linkedin.com/in/yuvalgrimblat
+#>
 $ErrorActionPreference = "Stop"
 
 # Get-CimInstance replaces the deprecated Get-WmiObject
