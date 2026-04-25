@@ -231,7 +231,7 @@ Recommended precautions:
 ## Version
 
 ```
-Version:  2.0
+Version:  1.1
 Year:     2026
 Author:   Yuval Grimblat
 Title:    Network Security Solutions Architect and Project Manager
