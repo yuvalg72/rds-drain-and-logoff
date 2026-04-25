@@ -1,294 +1,237 @@
 # RDS Drain and Logoff
 
-PowerShell utility for placing all **Remote Desktop Services (RDS) Session Hosts** into **drain mode** and forcing logoff of active user sessions across all collections through the **RD Connection Broker**.
+A PowerShell toolkit for placing **Remote Desktop Services (RDS) Session Hosts** into drain mode and force-logging off all active user sessions across every collection managed by an **RD Connection Broker**.
 
-This tool is designed for **maintenance operations** such as patching, updates, infrastructure changes, or scheduled downtime where all active sessions must be terminated and new connections blocked.
-
----
-
-# Overview
-
-The script performs the following actions:
-
-1. Detects the **Active Directory domain** of the host running the script.
-2. Identifies the **RD Connection Broker**.
-3. Retrieves all **RDS Session Collections**.
-4. Enumerates all **Session Hosts** across those collections.
-5. Sets each Session Host to **Drain Mode** (`NotUntilReboot`).
-6. Enumerates all active **RDS user sessions**.
-7. Forces **logoff of all connected users**.
+Built for maintenance operations: patching, infrastructure upgrades, storage migrations, and emergency session termination.
 
 ---
 
-# Architecture Flow
+## Files
 
-```
-Connection Broker
-        │
-        │
-        ▼
-Get-RDSessionCollection
-        │
-        ▼
-Get-RDSessionHost
-        │
-        ▼
-Drain Session Hosts
-(NewConnectionAllowed = NotUntilReboot)
-        │
-        ▼
-Enumerate Active Sessions
-        │
-        ▼
-Force Logoff
-```
+| File | Purpose |
+|---|---|
+| `rds-drain-and-logoff-gui.ps1` | **GUI front-end** — 2026 dark-mode Windows Forms interface (recommended) |
+| `drain-rds-farm.ps1` | **CLI script** — headless, runs from any elevated PowerShell prompt |
+| `build-and-sign.ps1` | **Build & sign helper** — packages the CLI into a signed EXE via PS2EXE |
 
 ---
 
-# Use Cases
+## Requirements
 
-Typical scenarios where this tool is used:
-
-* RDS maintenance windows
-* Windows Updates on RDS servers
-* Infrastructure upgrades
-* Storage migrations
-* Security patching
-* Emergency shutdown of user sessions
-* Pre-reboot draining of session hosts
+* Windows Server with **Remote Desktop Services** role installed
+* PowerShell **RemoteDesktop** module (`RSAT-RDS-Tools` feature)
+* Run from a machine with network access to the **RD Connection Broker**
+* **Administrator** privileges (`#Requires -RunAsAdministrator` enforced on all scripts)
+* GUI additionally requires **.NET Windows Forms** (included in all Windows Server editions)
 
 ---
 
-# Script Behavior
+## GUI — Recommended
 
-The script performs two major actions:
-
-## 1. Drain Session Hosts
-
-Each RDS Session Host is configured with:
-
-```
-NewConnectionAllowed = NotUntilReboot
-```
-
-Meaning:
-
-* No new user connections are allowed
-* The server remains in this state until reboot
-
-This ensures that:
-
-* Users cannot reconnect to the host
-* Maintenance can proceed safely
-
----
-
-## 2. Forced User Logoff
-
-The script enumerates all active RDS sessions and executes:
-
-```
-Invoke-RDUserLogoff -Force
-```
-
-This will immediately terminate all active user sessions.
-
-⚠ Users **will not receive a warning**, and unsaved work may be lost.
-
----
-
-# Requirements
-
-The following prerequisites must be met:
-
-* Windows Server with **Remote Desktop Services**
-* PowerShell with **RemoteDesktop module**
-* Administrative privileges
-* Access to the **RD Connection Broker**
-* Execution within the RDS infrastructure domain
-
-Required PowerShell commands used:
-
-```
-Get-RDSessionCollection
-Get-RDSessionHost
-Set-RDSessionHost
-Get-RDUserSession
-Invoke-RDUserLogoff
-```
-
----
-
-# Usage
-
-## GUI (recommended)
-
-Launch the graphical interface from an elevated PowerShell prompt:
+Launch from an elevated PowerShell prompt:
 
 ```powershell
 powershell.exe -ExecutionPolicy Bypass -File rds-drain-and-logoff-gui.ps1
 ```
 
-The GUI provides:
+### Interface
 
-* **Auto-detected Connection Broker** — editable field so you can point it at any broker
-* **Session Hosts list** — shows each host and its current drain status (colour-coded: green = accepting, red = drained)
-* **Active Sessions list** — shows user, host, session ID, and state
-* **Refresh** — reloads both lists from the broker on demand
-* **Drain All Hosts** — sets every host to `NotUntilReboot` with a confirmation dialog
-* **Logoff All Sessions** — force-logs off every active session with a confirmation dialog
-* **Drain + Logoff All** — performs both operations in sequence with a single confirmation
-* **Live Status Log** — timestamped colour-coded log of every action taken
-* **LinkedIn link** — opens the author's profile in your browser
+```
+┌─ Purple → Blue gradient header ──────────────────────────────────┐
+│  RDS Drain and Logoff   Yuval Grimblat · Mornex LTD 2026  [LinkedIn]
+├─ Connection Broker: [BROKER.DOMAIN.COM]  [⟳ Refresh] ───────────┤
+├─ Session Hosts  [3] ──────────┬─ Active Sessions  [7] ───────────┤
+│  RDSH01  NotUntilReboot (red) │  jsmith   RDSH01  4   Active     │
+│  RDSH02  Yes           (green)│  bjones   RDSH02  7   Active     │
+│  RDSH03  NotUntilReboot (red) │  ...                             │
+├───────────────────────────────┴──────────────────────────────────┤
+│  [⬇ Drain All Hosts]  [✕ Logoff All Sessions]  [⚡ Drain+Logoff] │
+├─ Status Log ─────────────────────────────────────────────────────┤
+│  14:02:01  Connecting to broker: BROKER.DOMAIN.COM…              │
+│  14:02:02  Loaded 3 session host(s).                             │
+│  14:02:02  Loaded 7 active session(s).                           │
+└──────────────────────────────────────────────────────────────────┘
+```
 
-## Command line
+### Features
 
-Run the script from a server that can communicate with the **RD Connection Broker**.
+**Connection Broker**
+- Auto-detected from the local machine's domain on startup
+- Editable — point it at any broker in your environment
+- Refresh reloads both lists from the broker on demand
+
+**Session Hosts panel**
+- Colour-coded status: green = accepting connections, red = drained (`NotUntilReboot`), amber = other
+- Live badge showing host count
+- Updates in place after drain operations
+
+**Active Sessions panel**
+- Shows username, host server, session ID, and session state
+- Live badge showing session count
+- Reloads automatically after any logoff operation
+
+**Action buttons** (each requires confirmation before executing)
+
+| Button | Action |
+|---|---|
+| Drain All Hosts | Sets every session host to `NotUntilReboot` |
+| Logoff All Sessions | Force-logs off every listed session |
+| Drain + Logoff All | Drains all hosts then logs off all sessions in sequence |
+
+**Status Log**
+- Timestamped, colour-coded output for every operation
+- Purple section dividers, blue for in-progress, green for success, red for errors
+- Dark terminal style (Cascadia Code / Consolas)
+
+**Design**
+- 2026 dark-mode aesthetic: near-black background, rounded card panels, purple-to-blue gradient header, pill-shaped buttons with hover transitions
+- Fully responsive — all panels reflow on window resize
+- Clickable LinkedIn link in the header
+
+---
+
+## CLI — Headless
+
+Run from any elevated PowerShell session on a machine with broker access:
 
 ```powershell
 powershell.exe -ExecutionPolicy Bypass -File drain-rds-farm.ps1
 ```
 
----
+### What it does
 
-# Expected Output
+1. Detects the Active Directory domain via `Get-CimInstance Win32_ComputerSystem`
+2. Constructs the Connection Broker FQDN (`$env:COMPUTERNAME.$domain`)
+3. Retrieves all RDS Session Collections from the broker
+4. Enumerates all Session Hosts across those collections
+5. Sets every Session Host to `NewConnectionAllowed = NotUntilReboot`
+6. Enumerates all active RDS user sessions via the broker
+7. Force-logs off every session with `Invoke-RDUserLogoff -Force`
 
-Example console output:
+Errors on individual hosts or sessions are caught and reported without aborting the remaining operations.
+
+### Example output
 
 ```
 Configuring RDSH01...
 Completed configuration for RDSH01
-
 Configuring RDSH02...
 Completed configuration for RDSH02
-
-Logging off user sessions...
-User session terminated: SessionID 4
-User session terminated: SessionID 7
+Logged off session 4 on RDSH01
+Logged off session 7 on RDSH02
 ```
 
 ---
 
-# Safety Warning
+## Architecture Flow
 
-This script is **destructive to active sessions**.
-
-It will:
-
-* Immediately log off all users
-* Terminate running applications
-* Potentially cause loss of unsaved data
-
-Recommended precautions:
-
-* Run during maintenance windows
-* Notify users before execution
-* Verify backups and recovery procedures
+```
+                    ┌─────────────────────┐
+                    │   RD Connection     │
+                    │      Broker         │
+                    └──────────┬──────────┘
+                               │
+               ┌───────────────┼───────────────┐
+               ▼               ▼               ▼
+   Get-RDSessionCollection  (all collections enumerated)
+               │
+               ▼
+       Get-RDSessionHost
+               │
+               ▼
+     Set-RDSessionHost
+   NewConnectionAllowed
+    = NotUntilReboot
+               │
+               ▼
+      Get-RDUserSession
+               │
+               ▼
+   Invoke-RDUserLogoff -Force
+```
 
 ---
 
-# Building & Signing the EXE
+## Building a Signed EXE
 
-The script can be packaged as a signed executable using **PS2EXE** and
-**Authenticode** (Windows built-in code signing).  A valid Authenticode
-signature is required by Microsoft Defender and most EDR solutions before they
-will allow an unsigned, locally-built binary to run.
+The CLI script can be compiled into a signed Windows executable using **PS2EXE** and **Authenticode**.  A valid Authenticode signature is required by Microsoft Defender and most EDR solutions before they will allow a locally-built binary to run.
 
-Use the included `build-and-sign.ps1` helper script.  Run it from an elevated
-(Administrator) PowerShell prompt.
+Use `build-and-sign.ps1` from an elevated PowerShell prompt.  It builds the EXE first and then signs both the `.ps1` source and the `.exe` output so no signature text is embedded into the compiled binary.
 
----
+### Option 1 — Self-signed (default)
 
-## Option 1 – Self-signed certificate (default)
-
-No certificate infrastructure needed.  Just run the script with no arguments:
+No certificate infrastructure needed:
 
 ```powershell
 .\build-and-sign.ps1
 ```
 
-This creates a self-signed code-signing certificate, trusts it locally, builds
-the EXE, and signs it in one step.  Defender will accept the EXE **on the
-machine where you ran the script**.
+Creates a self-signed code-signing certificate, trusts it on the local machine, builds the EXE, and signs both files. Defender accepts the EXE immediately on the machine where the script ran.
 
-To allow the EXE to run on other machines, distribute the certificate via Group
-Policy:
-
-```
-Computer Configuration → Windows Settings → Security Settings →
-Public Key Policies → Trusted Publishers   (add the .cer export)
-                     → Trusted Root CAs    (add the .cer export)
-```
-
-Export the certificate for distribution:
+To run the EXE on other machines, export the certificate and distribute it via Group Policy:
 
 ```powershell
+# Export
 $cert = Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.Subject -match "RDS Drain" }
 Export-Certificate -Cert $cert -FilePath rds-drain-logoff-signing.cer -Type CERT
 ```
 
----
+```
+GPO path: Computer Configuration → Windows Settings → Security Settings →
+          Public Key Policies → Trusted Publishers  (import .cer)
+                               → Trusted Root CAs   (import .cer)
+```
 
-## Option 2 – Internal Active Directory Certificate Services (ADCS)
+### Option 2 — Internal ADCS CA
 
-If your domain has an ADCS CA with a CodeSigning template, the script will
-automatically request and retrieve a certificate:
+Automatically requests a certificate from your domain's Active Directory Certificate Services:
 
 ```powershell
 .\build-and-sign.ps1 -CertSource InternalCA -CATemplate "CodeSigning"
 ```
 
-The resulting certificate is trusted by every machine that trusts your domain
-CA — no extra trust distribution is needed.
+The resulting certificate is trusted by every domain-joined machine — no manual distribution needed.
 
----
-
-## Option 3 – Existing certificate
-
-If your organisation already issued you a code-signing certificate, pass its
-thumbprint:
+### Option 3 — Existing certificate
 
 ```powershell
 .\build-and-sign.ps1 -CertSource Thumbprint -Thumbprint "AABBCCDDEEFF..."
 ```
 
-To find the thumbprint of certificates already in your store:
+Find available code-signing certificates:
 
 ```powershell
 Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.EnhancedKeyUsageList -match "Code Signing" }
 ```
 
----
-
-## Verifying the signature
+### Verify the signature
 
 ```powershell
 Get-AuthenticodeSignature .\rds-drain-and-logoff.exe | Format-List
+# Status should show: Valid
 ```
-
-A correctly signed binary shows `Status: Valid`.
 
 ---
 
-# Recommended Improvements
+## Safety Warning
 
-Future versions may include:
+This tool is **destructive to active sessions**.
 
-* User warning notifications
-* Graceful session draining
-* Maintenance countdown timer
-* Logging to file
-* Error handling
-* Session filtering
-* Dry-run mode
-* Integration with monitoring systems
+- Users are logged off **immediately** with no prior warning
+- Running applications are terminated
+- Unsaved work **will be lost**
+
+Recommended precautions:
+- Run during a scheduled maintenance window
+- Notify users before execution
+- Use the GUI confirmation dialogs as a last checkpoint
 
 ---
 
-# Version
+## Version
 
 ```
-Version: 1.0
+Version:  2.0
 Year:     2026
 Author:   Yuval Grimblat
 Title:    Network Security Solutions Architect and Project Manager
@@ -298,8 +241,6 @@ LinkedIn: https://www.linkedin.com/in/yuvalgrimblat
 
 ---
 
-# License
+## License
 
 MIT License
-
----
