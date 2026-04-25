@@ -1,5 +1,6 @@
 #Requires -RunAsAdministrator
 <#
+    Version:  1.1
     Author:   Yuval Grimblat
     Title:    Network Security Solutions Architect and Project Manager
     Company:  Mornex LTD
